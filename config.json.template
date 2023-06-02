@@ -1,0 +1,16 @@
+{
+    "systems":{
+        "orcid":{
+            "client_id": "ORCID-CLIENT-ID",
+            "client_secret": "ORCID-CLIENT-SECRET"
+        }
+    },
+    "database":{
+        "url":"mysql://USER:PASSWORD@SERVER:PORT/SCHEMA",
+        "min_connections":0,
+        "max_connections":8,
+        "keep_sec":10
+    },
+    "server":"127.0.0.1",
+    "port":8082
+}

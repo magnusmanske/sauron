@@ -1,115 +1,87 @@
 use std::{net::SocketAddr, sync::Arc, collections::HashMap};
-use serde_json::{json, Value};
-use serde::{Serialize,Deserialize};
+use serde_json::Value;
 use axum::{
-    routing::{get},//, post},
-    Json, 
+    routing::get,
     Router,
     http::StatusCode,
     Server,
-    extract::{State,Query,TypedHeader},//,Multipart,DefaultBodyLimit,Path},
-    // response::{IntoResponse, Response},
+    extract::{State,Query}, response::{Redirect, IntoResponse}, TypedHeader,
 };
-use http::header::{ACCEPT, CONTENT_TYPE};
-use tower_http::services::ServeDir;
+use http::{header::{ACCEPT, CONTENT_TYPE, SET_COOKIE}, HeaderMap};
+use tower_http::{services::ServeDir, trace::TraceLayer, compression::CompressionLayer};
 use crate::error::RingError;
+use crate::app_state::AppState;
+use crate::external_system::*;
 
 pub mod error;
+pub mod app_state;
+pub mod database_session_store;
+pub mod external_system;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AppState {
-}
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum ExternalSystem {
-    ORCID,
-}
 
-impl ExternalSystem {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::ORCID => "orcid",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ExternalSystemUser {
-    pub system: ExternalSystem,
-    pub name: String,
-    pub external_id: String,
-    pub bespoke_data: Value,
-}
-
-async fn redirect_orcid(State(_state): State<Arc<AppState>>, 
+async fn redirect_orcid(State(state): State<Arc<AppState>>, 
     Query(params): Query<HashMap<String, String>>, 
     _cookies: Option<TypedHeader<headers::Cookie>>,
-) -> Result<Json<Value>, StatusCode> {
+) -> impl IntoResponse {
     let code = match params.get("code") {
         Some(code) => code,
         None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
-    let my_url = "https://127.0.0.1:8082/redirect/orcid";
-    let client_id = "APP-05P9ELF6BR53WKIS";
-    let client_secret = "b34ab9fa-d96d-470e-8cb6-983b5ad8c916";
+    
+    let server = &state.server;
+    let port = state.config["port"].as_u64().expect("port");
+    let redirect_uri = format!("https://{server}:{port}/redirect/orcid");
+    let client_id = state.config["systems"]["orcid"]["client_id"].as_str().expect("ORCID client_id");
+    let client_secret = state.config["systems"]["orcid"]["client_secret"].as_str().expect("ORCID client_secret");
+    let body = format!("client_id={client_id}&client_secret={client_secret}&grant_type=authorization_code&code={code}&redirect_uri={redirect_uri}");
 
-    let body = vec![
-        ("client_id",client_id),
-        ("client_secret",client_secret),
-        ("grant_type","authorization_code"),
-        ("code",code.as_str()),
-        ("redirect_uri",my_url),
-    ]
-        .iter()
-        .map(|(k,v)|format!("{k}={v}"))
-        .collect::<Vec<String>>()
-        .join("&");
-
-    let client = reqwest::Client::new();
-    let res = client
+    let j = reqwest::Client::new()
         .post("https://orcid.org/oauth/token")
         .header(ACCEPT, "application/json")
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(body)
         .send()
-        .await;
-    let response = match res {
-        Ok(response) => response,
-        Err(_e) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
-    let j = match response.json::<Value>().await {
-        Ok(j) => j,
-        Err(_e) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
+        .await
+        .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?
+        .json::<Value>().await
+        .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let user = ExternalSystemUser {
+    let mut user = ExternalSystemUser {
+        id: None,
         system: ExternalSystem::ORCID,
-        name: j.get("name").unwrap().to_string(),
-        external_id: j.get("orcid").unwrap().to_string(),
+        name: j["name"].as_str().unwrap().to_string(),
+        external_id: j["orcid"].as_str().unwrap().to_string(),
         bespoke_data: j,
     };
+    let _user_id = user
+        .add_to_database(state.clone())
+        .await
+        .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let j = json!({"status":"OK","user":user});
-    Ok(Json(j))
+    let cookie = user.set_cookie(state).await
+        .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Set cookie
+    let mut headers = HeaderMap::new();
+    headers.insert(SET_COOKIE, cookie.parse().unwrap());
+
+    Ok((headers, Redirect::to("/")))
 }
 
 
 pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
     tracing_subscriber::fmt::init();
 
-    // let cors = CorsLayer::new().allow_origin(Any);
-
     let app = Router::new()
         .route("/redirect/orcid", get(redirect_orcid))
         .nest_service("/", ServeDir::new("html"))
         .with_state(state.clone())
-        // .layer(DefaultBodyLimit::max(1024*1024*MAX_UPLOAD_MB))
-        // .layer(TraceLayer::new_for_http())
-        // .layer(CompressionLayer::new())
-        // .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .layer(CompressionLayer::new())
         ;
 
-    let port: u16 = 8082;
+    let port: u16 = state.port;
     let ip = [0, 0, 0, 0];
 
     let addr = SocketAddr::from((ip, port));
@@ -125,8 +97,7 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
 #[tokio::main]
 async fn main() -> Result<(), RingError> {
     // let cli = Cli::parse();
-    // let app = Arc::new(AppState::from_config_file("config.json").expect("app creation failed"));
-    let state = Arc::new(AppState{});
+    let state = Arc::new(AppState::from_config_file("config.json").expect("app creation failed"));
     run_server(state).await?;
     Ok(())
 }
