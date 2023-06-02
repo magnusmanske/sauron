@@ -1,0 +1,28 @@
+[package]
+name = "sauron"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+futures = "*"
+tracing = "*"
+tracing-subscriber = "*"
+tower-http = { version = "0.4", features = ["cors","compression-gzip","trace"] }
+mysql_async = "*"
+async-session = "3"
+axum = { version="*", features = ["headers","multipart"] }
+axum-extra = { version="*", features = ["spa"] }
+headers = "0.3"
+http = "0.2"
+oauth2 = "4.1"
+reqwest = { version="*", features = ["json"] }
+serde = "1"
+serde_json = "1"
+
+#async-trait = "*"
+#lazy_static = "1"
+#regex = "1"
+#clap = { version = "4", features = ["derive"] }
