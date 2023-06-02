@@ -59,20 +59,4 @@ impl DatabaseSessionStore {
     async fn db_conn(&self) -> Conn {
         self.pool.as_ref().unwrap().get_conn().await.unwrap()
     }
-
-    /// Performs session cleanup. This should be run on an
-    /// intermittent basis if this store is run for long enough that
-    /// memory accumulation is a concern
-    pub async fn cleanup(&self) -> Result {
-        // TODO delete expired? session.is_expired()
-        Ok(())
-    }
-
-    /// returns the number of elements in the memory store
-    pub async fn count(&self) -> usize {
-        let sql = "SELECT count(*) FROM `session`" ;
-        *self.db_conn().await
-            .exec_iter(sql,()).await.unwrap()
-            .map_and_drop(|row| mysql_async::from_row::<usize>(row)).await.unwrap().get(0).unwrap()
-    }
 }
