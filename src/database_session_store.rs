@@ -13,7 +13,7 @@ impl SessionStore for DatabaseSessionStore {
     async fn load_session(&self, cookie_value: String) -> Result<Option<Session>> {
         let id_string = Session::id_from_cookie_value(&cookie_value)?;
         let sql = "SELECT `json` FROM `session` WHERE `id_string`=:id_string" ;
-        let res = self.get_gulp_conn().await
+        let res = self.db_conn().await
             .exec_iter(sql,params! {id_string}).await?
             .map_and_drop(|row| mysql_async::from_row::<String>(row)).await?.get(0).cloned();
         match res {
@@ -30,7 +30,7 @@ impl SessionStore for DatabaseSessionStore {
         let id_string = session.id().to_string();
         let json = json!(session).to_string();
         let sql = "REPLACE INTO `session` (id_string,json) VALUES (:id_string,:json)" ;
-        self.get_gulp_conn().await.exec_drop(sql, params!{id_string,json}).await?;
+        self.db_conn().await.exec_drop(sql, params!{id_string,json}).await?;
         session.reset_data_changed();
         Ok(session.into_cookie_value())
     }
@@ -38,14 +38,14 @@ impl SessionStore for DatabaseSessionStore {
     async fn destroy_session(&self, session: Session) -> Result {
         let id_string = session.id().to_string();
         let sql = "DELETE FROM `session` WHERE `id_string`=:id_string" ;
-        self.get_gulp_conn().await.exec_drop(sql, params!{id_string}).await?;
+        self.db_conn().await.exec_drop(sql, params!{id_string}).await?;
         Ok(())
     }
 
     async fn clear_store(&self) -> Result {
         let id = 0;
         let sql = "DELETE FROM `session` WHERE id>:id" ;
-        self.get_gulp_conn().await.exec_drop(sql, params!{id}).await?;
+        self.db_conn().await.exec_drop(sql, params!{id}).await?;
         Ok(())
     }
 }
@@ -56,7 +56,7 @@ impl DatabaseSessionStore {
         Self::default()
     }
 
-    async fn get_gulp_conn(&self) -> Conn {
+    async fn db_conn(&self) -> Conn {
         self.pool.as_ref().unwrap().get_conn().await.unwrap()
     }
 
@@ -71,7 +71,7 @@ impl DatabaseSessionStore {
     /// returns the number of elements in the memory store
     pub async fn count(&self) -> usize {
         let sql = "SELECT count(*) FROM `session`" ;
-        *self.get_gulp_conn().await
+        *self.db_conn().await
             .exec_iter(sql,()).await.unwrap()
             .map_and_drop(|row| mysql_async::from_row::<usize>(row)).await.unwrap().get(0).unwrap()
     }

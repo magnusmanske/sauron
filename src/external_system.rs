@@ -54,10 +54,13 @@ impl ExternalSystemUser {
     pub async fn set_cookie(&self, state: Arc<AppState>) -> Result<String,RingError> {
         // Create a new session filled with user data
         let mut session = Session::new();
-        session.insert("user", &self).unwrap();
+        session.insert("user", &self)?;
 
         // Store session and get corresponding cookie
-        let cookie = state.store.store_session(session).await.unwrap().unwrap();
+        let cookie = state.store.store_session(session)
+            .await
+            .map_err(|e|e.to_string())?
+            .ok_or_else(||format!("Session store error"))?;
 
         // Build the cookie
         let cookie = format!("{}={}; SameSite=Lax; Path=/", COOKIE_NAME, cookie);
@@ -69,8 +72,8 @@ impl ExternalSystemUser {
         let session = app.store.load_session(cookie).await.ok()??;
         let j = json!(session).get("data").cloned()?.get("user")?.to_owned();
         let user: Value = serde_json::from_str(j.as_str()?).ok()?;
-        let s = serde_json::to_string(&user).unwrap();
-        let ret: Self = serde_json::from_str(&s).unwrap();
+        let s = serde_json::to_string(&user).ok()?;
+        let ret: Self = serde_json::from_str(&s).ok()?;
         Some(ret)
     }
 

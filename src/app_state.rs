@@ -41,7 +41,7 @@ impl AppState {
         let keep_sec = config["keep_sec"].as_u64().expect("No keep_sec value");
         let url = config["url"].as_str().expect("No url value");
         let pool_opts = PoolOpts::default()
-            .with_constraints(PoolConstraints::new(min_connections, max_connections).unwrap())
+            .with_constraints(PoolConstraints::new(min_connections, max_connections).expect("pool_opts error"))
             .with_inactive_connection_ttl(Duration::from_secs(keep_sec));
         let wd_url = url;
         let wd_opts = Opts::from_url(wd_url).expect(format!("Can not build options from db_wd URL {}",wd_url).as_str());

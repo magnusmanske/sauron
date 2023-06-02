@@ -53,11 +53,18 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
         .json::<Value>().await
         .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let name = j["name"].as_str()
+        .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR)?
+        .to_string();
+    let external_id = j["orcid"].as_str()
+        .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR)?
+        .to_string();
+
     let mut user = ExternalSystemUser {
         id: None,
         system: ExternalSystem::ORCID,
-        name: j["name"].as_str().unwrap().to_string(),
-        external_id: j["orcid"].as_str().unwrap().to_string(),
+        name,
+        external_id,
         bespoke_data: j,
     };
     let _user_id = user
@@ -70,7 +77,8 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
 
     // Set cookie
     let mut headers = HeaderMap::new();
-    headers.insert(SET_COOKIE, cookie.parse().unwrap());
+    let val = cookie.parse().map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
+    headers.insert(SET_COOKIE, val);
 
     Ok((headers, Redirect::to("/")))
 }
