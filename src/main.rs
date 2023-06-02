@@ -1,11 +1,11 @@
 use std::{net::SocketAddr, sync::Arc, collections::HashMap};
-use serde_json::Value;
+use serde_json::{Value, json};
 use axum::{
     routing::get,
     Router,
     http::StatusCode,
     Server,
-    extract::{State,Query}, response::{Redirect, IntoResponse}, TypedHeader,
+    extract::{State,Query}, response::{Redirect, IntoResponse, Response}, TypedHeader, Json,
 };
 use http::{header::{ACCEPT, CONTENT_TYPE, SET_COOKIE}, HeaderMap};
 use tower_http::{services::ServeDir, trace::TraceLayer, compression::CompressionLayer};
@@ -18,6 +18,12 @@ pub mod app_state;
 pub mod database_session_store;
 pub mod external_system;
 
+
+async fn auth_info(State(state): State<Arc<AppState>>, cookies: Option<TypedHeader<headers::Cookie>>,) -> Response {
+    let user = ExternalSystemUser::from_cookies(&state, &cookies).await;
+    let j = json!({"status":"OK","user":user});
+    (StatusCode::OK, Json(j)).into_response()
+}
 
 
 async fn redirect_orcid(State(state): State<Arc<AppState>>, 
@@ -75,6 +81,7 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
 
     let app = Router::new()
         .route("/redirect/orcid", get(redirect_orcid))
+        .route("/auth/info", get(auth_info))
         .nest_service("/", ServeDir::new("html"))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())

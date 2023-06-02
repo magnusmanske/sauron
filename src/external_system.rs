@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use async_session::{Session, SessionStore};
+use axum::TypedHeader;
 use mysql_async::{params, prelude::*};
-use serde_json::Value;
+use serde_json::{Value, json};
 use serde::{Serialize,Deserialize};
 use crate::error::RingError;
 use crate::app_state::AppState;
@@ -62,4 +63,15 @@ impl ExternalSystemUser {
         let cookie = format!("{}={}; SameSite=Lax; Path=/", COOKIE_NAME, cookie);
         Ok(cookie)
     }
+
+    pub async fn from_cookies(app: &Arc<AppState>, cookies: &Option<TypedHeader<headers::Cookie>>) -> Option<Self> {
+        let cookie = cookies.to_owned()?.get(COOKIE_NAME)?.to_string();
+        let session = app.store.load_session(cookie).await.ok()??;
+        let j = json!(session).get("data").cloned()?.get("user")?.to_owned();
+        let user: Value = serde_json::from_str(j.as_str()?).ok()?;
+        let s = serde_json::to_string(&user).unwrap();
+        let ret: Self = serde_json::from_str(&s).unwrap();
+        Some(ret)
+    }
+
 }
