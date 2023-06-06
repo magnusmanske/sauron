@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use async_session::{Session, SessionStore};
 use axum::TypedHeader;
@@ -6,6 +7,7 @@ use serde_json::{Value, json};
 use serde::{Serialize,Deserialize};
 use crate::error::RingError;
 use crate::app_state::AppState;
+use crate::entity::Entity;
 
 pub static COOKIE_NAME: &str = "SESSION";
 
@@ -28,6 +30,7 @@ impl ExternalSystem {
         }
     }
 }
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalSystemUser {
@@ -75,6 +78,38 @@ impl ExternalSystemUser {
         let s = serde_json::to_string(&user).ok()?;
         let ret: Self = serde_json::from_str(&s).ok()?;
         Some(ret)
+    }
+
+    pub async fn get_entities_with_access(&self, app: &Arc<AppState>) -> Result<Vec<Entity>,RingError> {
+        let sql = r#"SELECT `entity_id`,`right` FROM `access` WHERE user_id=:user_id"# ;
+        let user_id = self.id;
+
+        let res = app.db_conn().await?
+            .exec_iter(sql,params! {user_id}).await?
+            .map_and_drop(|row|  mysql_async::from_row::<(usize,String)>(row) ).await?;
+        let mut entity_ids: Vec<usize> = res
+            .iter()
+            .map(|(id,_right)|*id)
+            .collect();
+        entity_ids.sort();
+        entity_ids.dedup();
+
+        let entities = app.load_entities(&entity_ids).await?;
+
+        let mut entities: HashMap<usize,Entity> = entities
+            .iter()
+            .map(|e|(e.id,e.to_owned()))
+            .collect();
+        res
+            .iter()
+            .for_each(|(id,right)|{
+                if let Some(entity) = entities.get_mut(id) {
+                    entity.rights.push(right.to_owned())
+                }
+            });
+        let entities: Vec<Entity> = entities.values().cloned().collect();
+        let entities = app.annotate_entities(entities).await?;
+        Ok(entities)
     }
 
 }

@@ -5,7 +5,7 @@ use axum::{
     Router,
     http::StatusCode,
     Server,
-    extract::{State,Query}, response::{Redirect, IntoResponse, Response}, TypedHeader, Json,
+    extract::{State,Query, Path}, response::{Redirect, IntoResponse}, TypedHeader, Json,
 };
 use http::{header::{ACCEPT, CONTENT_TYPE, SET_COOKIE}, HeaderMap};
 use tower_http::{services::ServeDir, trace::TraceLayer, compression::CompressionLayer};
@@ -17,12 +17,43 @@ pub mod error;
 pub mod app_state;
 pub mod database_session_store;
 pub mod external_system;
+pub mod entity;
 
 
-async fn auth_info(State(state): State<Arc<AppState>>, cookies: Option<TypedHeader<headers::Cookie>>,) -> Response {
+async fn auth_info(State(state): State<Arc<AppState>>, cookies: Option<TypedHeader<headers::Cookie>>,) -> impl IntoResponse {
     let user = ExternalSystemUser::from_cookies(&state, &cookies).await;
     let j = json!({"status":"OK","user":user});
-    (StatusCode::OK, Json(j)).into_response()
+    (StatusCode::OK, Json(j))
+}
+
+async fn user_entities(State(state): State<Arc<AppState>>, cookies: Option<TypedHeader<headers::Cookie>>,) -> impl IntoResponse {
+    let user = match ExternalSystemUser::from_cookies(&state, &cookies).await {
+        Some(user) => user,
+        None => return (StatusCode::OK, Json(json!({"status":"not_logged_in"}))),
+    };
+    let entities = match user.get_entities_with_access(&state).await {
+        Ok(entities) => entities,
+        Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
+    };
+    let j = json!({"status":"OK","entities":entities});
+    (StatusCode::OK, Json(j))
+}
+
+async fn entities(State(state): State<Arc<AppState>>, Path(entity_ids): Path<String>, _cookies: Option<TypedHeader<headers::Cookie>>,) -> impl IntoResponse {
+    let entity_ids: Vec<usize> = entity_ids
+        .split(',')
+        .filter_map(|e|e.parse::<usize>().ok())
+        .collect();
+    let entities = match state.load_entities(&entity_ids).await {
+        Ok(entities) => entities,
+        Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
+    };
+    let entities = match state.annotate_entities(entities).await {
+        Ok(entities) => entities,
+        Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
+    };
+    let j = json!({"status":"OK","entities":entities});
+    (StatusCode::OK, Json(j))
 }
 
 
@@ -90,6 +121,11 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
     let app = Router::new()
         .route("/redirect/orcid", get(redirect_orcid))
         .route("/auth/info", get(auth_info))
+
+        .route("/user/entities", get(user_entities))
+
+        .route("/entities/:ids", get(entities))
+
         .nest_service("/", ServeDir::new("html"))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())
