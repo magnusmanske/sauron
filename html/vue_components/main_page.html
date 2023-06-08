@@ -8,7 +8,10 @@
         </p>
 
         <div v-if="user.is_logged_in">
-            <b>Welcome, {{user.name}}!</b>
+            <div>
+                <b>Welcome, {{user.name}}!</b>
+                (<a href="/user/logout">log out</a>)
+            </div>
             <div v-if='error!=""' class="alert alert-danger" role="alert">{{error}}</div>
             <div v-if="loaded">
                 <table class="table">

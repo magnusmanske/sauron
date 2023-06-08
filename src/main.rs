@@ -1,4 +1,5 @@
 use std::{net::SocketAddr, sync::Arc, collections::HashMap};
+use async_session::SessionStore;
 use serde_json::{Value, json};
 use axum::{
     routing::get,
@@ -24,6 +25,14 @@ async fn auth_info(State(state): State<Arc<AppState>>, cookies: Option<TypedHead
     let user = ExternalSystemUser::from_cookies(&state, &cookies).await;
     let j = json!({"status":"OK","user":user});
     (StatusCode::OK, Json(j))
+}
+
+async fn user_logout(State(state): State<Arc<AppState>>, cookies: TypedHeader<headers::Cookie>,) -> impl IntoResponse {
+    let cookie = cookies.get(COOKIE_NAME).unwrap().to_string();
+    if let Some(session) = state.store.load_session(cookie).await.unwrap() {
+        state.store.destroy_session(session).await.unwrap();
+    };
+    Redirect::to("/")
 }
 
 async fn user_entities(State(state): State<Arc<AppState>>, cookies: Option<TypedHeader<headers::Cookie>>,) -> impl IntoResponse {
@@ -121,6 +130,7 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
         .route("/redirect/orcid", get(redirect_orcid))
         .route("/auth/info", get(auth_info))
         .route("/user/entities", get(user_entities))
+        .route("/user/logout", get(user_logout))
         .route("/entities/:ids", get(entities))
         .nest_service("/", ServeDir::new("html"))
         .with_state(state.clone())
