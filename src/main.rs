@@ -35,7 +35,7 @@ async fn user_entities(State(state): State<Arc<AppState>>, cookies: Option<Typed
         Ok(entities) => entities,
         Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
     };
-    let j = json!({"status":"OK","entities":entities});
+    let j = json!({"status":"OK","entities":entities.as_sorted_vec()});
     (StatusCode::OK, Json(j))
 }
 
@@ -44,15 +44,14 @@ async fn entities(State(state): State<Arc<AppState>>, Path(entity_ids): Path<Str
         .split(',')
         .filter_map(|e|e.parse::<usize>().ok())
         .collect();
-    let entities = match state.load_entities(&entity_ids).await {
+    let mut entities = match state.load_entities(&entity_ids).await {
         Ok(entities) => entities,
         Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
     };
-    let entities = match state.annotate_entities(entities).await {
-        Ok(entities) => entities,
-        Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
+    if let Err(e) = state.annotate_entities(&mut entities).await {
+        return (StatusCode::OK, Json(json!({"status":e.to_string()})))
     };
-    let j = json!({"status":"OK","entities":entities});
+    let j = json!({"status":"OK","entities":entities.as_sorted_vec()});
     (StatusCode::OK, Json(j))
 }
 
@@ -121,11 +120,8 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
     let app = Router::new()
         .route("/redirect/orcid", get(redirect_orcid))
         .route("/auth/info", get(auth_info))
-
         .route("/user/entities", get(user_entities))
-
         .route("/entities/:ids", get(entities))
-
         .nest_service("/", ServeDir::new("html"))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())

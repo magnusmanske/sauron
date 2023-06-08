@@ -1,0 +1,120 @@
+<style>
+</style>
+
+<template id='main-page-template'>
+	<div class='container'>
+        <p class='lead'>
+            The system that <i>really</i> watches over your user access rights.
+        </p>
+
+        <div v-if="user.is_logged_in">
+            <b>Welcome, {{user.name}}!</b>
+            <div v-if='error!=""' class="alert alert-danger" role="alert">{{error}}</div>
+            <div v-if="loaded">
+                <table class="table">
+                    <caption style="display:none;">Entity lists (parents, current, children)</caption>
+                    <tr>
+                        <th>Parent entities</th>
+                        <th>Current entities</th>
+                        <th>Child entities</th>
+                    </tr>
+                    <tr v-for="entity_id in entity_ids">
+                        <td>
+                            <div v-for="parent_id in entities[entity_id].parent_ids">
+                                <entity :entity="entities[parent_id]"></entity>
+                            </div>
+                        </td>
+                        <td>
+                            <entity :entity="entities[entity_id]"></entity>
+                        </td>
+                        <td>
+                            <div v-for="child_id in entities[entity_id].child_ids">
+                                <entity :entity="entities[child_id]"></entity>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div v-else>
+                <i>Loading...</i>
+            </div>
+        </div>
+        <div v-else>
+            <h2>Log in</h2>
+            <ul>
+                <li><a href="https://orcid.org/oauth/authorize?client_id=APP-05P9ELF6BR53WKIS&response_type=code&scope=/authenticate&redirect_uri=https://127.0.0.1:8082/redirect/orcid">ORCID</a></li>
+            </ul>
+        </div>
+	</div>
+</template>
+
+<script>
+'use strict';
+
+let MainPage = Vue.extend ( {
+        props : ['group_id'] ,
+        data : function () { return {
+            loaded:false,
+            error:'',
+            entity_ids:[],
+            entities:{},
+        } } ,
+        created : function () {
+            this.load_main_entities()
+                .then((entity_ids)=>{
+                    this.entity_ids = entity_ids;
+                    return this.load_entities(entity_ids);
+                })
+                .then((entities) => {
+                    let parent_ids = entities.flatMap(e=>e.parent_ids);
+                    let child_ids = entities.flatMap(e=>e.child_ids);
+                    let entity_ids = parent_ids.concat(child_ids);
+                    entities.forEach(e => {this.entities[e.id]=e})
+                    return this.load_entities(entity_ids);
+                })
+                .then((entities) => {
+                    entities.forEach(e => {this.entities[e.id]=e})
+                    this.loaded = true;
+                })
+                .catch((error)=>{
+                    this.error = error;
+                })
+        } ,
+        methods : {
+            load_main_entities() {
+                let self = this;
+                if ( typeof this.group_id!='undefined' ) {
+                    return new Promise(function(resolve, reject) {
+                        let entity_ids = [self.group_id*1];
+                        self.load_entities(entity_ids)
+                            .then((entities) => resolve(entity_ids))
+                            .catch(reject);
+                    });
+                }
+                return new Promise(function(resolve, reject) {
+                    fetch(new Request("/user/entities"))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) return reject(data.status);
+                            let entity_ids = data.entities.map(e=>e.id);
+                            resolve(entity_ids)
+                        })
+                        .catch(reject);
+                    })
+            } ,
+            load_entities(entity_ids) {
+                return new Promise(function(resolve, reject) {
+                    if ( entity_ids.length==0 ) return resolve([]);
+                    fetch(new Request("/entities/"+entity_ids.join(",")))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) return reject(data.status);
+                            resolve(data.entities);
+                        })
+                        .catch(reject);
+                    })
+            }
+        },
+        template:'#main-page-template'
+    } ) ;
+</script>

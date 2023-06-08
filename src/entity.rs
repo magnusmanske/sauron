@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::HashMap};
 
 use mysql_async::Row;
 use serde::{Serialize, Deserialize};
@@ -41,4 +41,40 @@ impl Ord for Entity {
     fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct EntityGroup {
+    entities: HashMap<usize,Entity>,
+}
+
+impl EntityGroup {
+    pub fn from_vec(entities: Vec<Entity>) -> Self {
+        Self {
+            entities: entities.iter().map(|e|(e.id,e.to_owned())).collect(),
+        }
+    }
+
+    pub fn get(&self, id: usize) -> Option<&Entity> {
+        self.entities.get(&id)
+    }
+
+    pub fn get_mut(&mut self, id: usize) -> Option<&mut Entity> {
+        self.entities.get_mut(&id)
+    }
+
+    pub fn as_vec(&self) -> Vec<Entity> {
+        self.entities.values().cloned().collect()
+    }
+
+    pub fn as_sorted_vec(&self) -> Vec<Entity> {
+        let mut ret = self.as_vec();
+        ret.sort();
+        ret
+    }
+
+    pub fn keys(&self) -> Vec<usize> {
+        self.entities.keys().cloned().collect()
+    }
+
 }

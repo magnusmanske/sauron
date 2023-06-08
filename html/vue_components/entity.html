@@ -1,0 +1,25 @@
+<style>
+</style>
+
+<template id='entity-template'>
+<div>
+<router-link :to="'/'+entity.id">{{entity.name}}</router-link>
+</div>
+</template>
+
+
+
+<script>
+'use strict';
+
+Vue.component ( 'entity' , {
+    props : [ 'entity' ] ,
+    data : function () { return {  } } ,
+    created : function () {
+    } ,
+    methods : {
+    } ,
+    template : '#entity-template'
+} ) ;
+
+</script>

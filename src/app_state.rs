@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::{env, fs::File, time::Duration};
 use mysql_async::prelude::*;
 use mysql_async::{Conn, PoolOpts, PoolConstraints, OptsBuilder, Opts};
 use serde_json::Value;
 use crate::error::RingError;
 use crate::database_session_store::DatabaseSessionStore;
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityGroup};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -56,17 +55,17 @@ impl AppState {
         self.db_pool.get_conn().await
     }
 
-    pub async fn load_entities(&self, entity_ids: &[usize]) -> Result<Vec<Entity>,RingError> {
+    pub async fn load_entities(&self, entity_ids: &[usize]) -> Result<EntityGroup,RingError> {
         if entity_ids.is_empty() {
-            return Ok(vec![]);
+            return Ok(EntityGroup::default());
         }
         let entity_ids: Vec<_> = entity_ids.iter().map(|i|format!("{i}")).collect();
         let entity_ids = entity_ids.join(",");
         let sql = format!("SELECT id,name FROM `entity` WHERE id IN ({})",entity_ids);
         let res = self.db_conn().await?
             .exec_iter(sql,()).await?
-            .map_and_drop(|row|  Entity::from_row(&row) ).await?;
-        Ok(res)
+            .map_and_drop(|row| Entity::from_row(&row) ).await?;
+        Ok(EntityGroup::from_vec(res))
     }
 
     /// Returns Vec<(parent,child)>
@@ -97,30 +96,21 @@ impl AppState {
         Ok(res)
     }
 
-    pub async fn annotate_entities(&self, entities: Vec<Entity>) -> Result<Vec<Entity>,RingError> {
-        let mut entities: HashMap<usize,Entity> = entities
-            .iter()
-            .map(|e|(e.id,e.to_owned()))
-            .collect();
-        let entity_ids: Vec<usize> = entities.keys().cloned().collect();
-        self.load_entity_children(&entity_ids).await?
+    pub async fn annotate_entities(&self, entities: &mut EntityGroup) -> Result<(),RingError> {
+        self.load_entity_children(&entities.keys()).await?
             .iter()
             .for_each(|(parent,child)|{
-                if let Some(entity) = entities.get_mut(parent) {
+                if let Some(entity) = entities.get_mut(*parent) {
                     entity.child_ids.push(*child)
                 }
             });
-        self.load_entity_parents(&entity_ids).await?
+        self.load_entity_parents(&entities.keys()).await?
             .iter()
             .for_each(|(parent,child)|{
-                if let Some(entity) = entities.get_mut(child) {
+                if let Some(entity) = entities.get_mut(*child) {
                     entity.parent_ids.push(*parent)
                 }
             });
-
-       
-        let mut ret: Vec<Entity> = entities.values().cloned().collect();
-        ret.sort();
-        Ok(ret)
+        Ok(())
     }
 }
