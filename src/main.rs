@@ -1,11 +1,11 @@
-use std::{net::SocketAddr, sync::Arc, collections::HashMap};
+use std::{net::SocketAddr, sync::Arc, collections::HashMap, path::PathBuf};
 use async_session::SessionStore;
+use axum_server::tls_rustls::RustlsConfig;
 use serde_json::{Value, json};
 use axum::{
     routing::get,
     Router,
     http::StatusCode,
-    Server,
     extract::{State,Query, Path}, response::{Redirect, IntoResponse}, TypedHeader, Json,
 };
 use http::{header::{ACCEPT, CONTENT_TYPE, SET_COOKIE}, HeaderMap};
@@ -134,6 +134,19 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
 pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
     tracing_subscriber::fmt::init();
 
+    let cert_dir = "."; // env!("CARGO_MANIFEST_DIR")
+    let config = RustlsConfig::from_pem_file(
+        PathBuf::from(cert_dir)
+            .join("self_signed_certs")
+            .join("cert.pem"),
+        PathBuf::from(cert_dir)
+            .join("self_signed_certs")
+            .join("key.pem"),
+    )
+    .await
+    .unwrap();
+
+
     let app = Router::new()
         .route("/redirect_to/orcid", get(redirect_to_orcid))
         .route("/redirect/orcid", get(redirect_orcid))
@@ -147,21 +160,14 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
         .layer(CompressionLayer::new())
         ;
 
-    let ip = [0, 0, 0, 0];
-    let mut futures = vec![];
-    futures.push(Server::bind(&SocketAddr::from((ip, state.port_http))).serve(app.clone().into_make_service()));
-    futures.push(Server::bind(&SocketAddr::from((ip, state.port_https))).serve(app.clone().into_make_service()));
-    tracing::info!("listening");
-    
-    futures::future::join_all(futures).await;
-        
-
+    let addr = SocketAddr::from(([127, 0, 0, 1], state.port_https));
+    tracing::debug!("listening on {}", addr);
+    axum_server::bind_rustls(addr, config).serve(app.into_make_service()).await?;
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), RingError> {
-    // let cli = Cli::parse();
     let state = Arc::new(AppState::from_config_file("config.json").expect("app creation failed"));
     run_server(state).await?;
     Ok(())
