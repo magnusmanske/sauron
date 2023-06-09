@@ -45,8 +45,10 @@ impl ExternalSystemUser {
         let system = self.system.as_str();
         let external_id = &self.external_id;
         let name = &self.name;
-        let bespoke_data = &self.bespoke_data;
-        let sql = r#"INSERT INTO `user` (`system`,`external_id`,`name`,`bespoke_data`) VALUES (:system,:external_id,:name,:bespoke_data) ON DUPLICATE KEY UPDATE `bespoke_data`=:bespoke_data"# ;
+        let bespoke_data = self.bespoke_data.to_string();
+        let sql = r#"INSERT INTO `user` (`system`,`external_id`,`name`,`bespoke_data`) 
+            VALUES (:system,:external_id,:name,:bespoke_data) 
+            ON DUPLICATE KEY UPDATE `bespoke_data`=:bespoke_data"# ;
         let mut conn = state.db_conn().await?;
         conn.exec_drop(sql, params!{system,external_id,name,bespoke_data}).await?;
         self.id = conn.last_insert_id();
