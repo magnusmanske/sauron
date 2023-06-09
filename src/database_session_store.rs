@@ -29,7 +29,7 @@ impl SessionStore for DatabaseSessionStore {
     async fn store_session(&self, session: Session) -> Result<Option<String>> {
         let id_string = session.id().to_string();
         let json = json!(session).to_string();
-        let sql = "REPLACE INTO `session` (id_string,json) VALUES (:id_string,:json)" ;
+        let sql = "INSERT INTO `session` (id_string,json) VALUES (:id_string,:json) ON DUPLICATE KEY SET `json`=:json" ;
         self.db_conn().await.exec_drop(sql, params!{id_string,json}).await?;
         session.reset_data_changed();
         Ok(session.into_cookie_value())
