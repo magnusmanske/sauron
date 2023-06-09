@@ -86,11 +86,10 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
     };
     
     println!("B");
-    let port = state.config["port"].as_u64().expect("port");
     let redirect_url = format!("{}/redirect/orcid",state.get_redirect_server());
     let client_id = state.config["systems"]["orcid"]["client_id"].as_str().expect("ORCID client_id");
     let client_secret = state.config["systems"]["orcid"]["client_secret"].as_str().expect("ORCID client_secret");
-    let body = format!("client_id={client_id}&client_secret={client_secret}&grant_type=authorization_code&code={code}&redirect_uri={redirect_uri}");
+    let body = format!("client_id={client_id}&client_secret={client_secret}&grant_type=authorization_code&code={code}&redirect_uri={redirect_url}");
     println!("C");
 
     let j = reqwest::Client::new()
