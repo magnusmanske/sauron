@@ -116,10 +116,11 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
         external_id,
         bespoke_data: j,
     };
-    let _user_id = user
+    let result = user
         .add_to_database(state.clone())
-        .await
-        .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .await;
+    println!("{result:?}");
+    let _ = result.map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let cookie = user.set_cookie(state).await
         .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
