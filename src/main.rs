@@ -147,14 +147,13 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
         .layer(CompressionLayer::new())
         ;
 
-    let port: u16 = state.port;
     let ip = [0, 0, 0, 0];
-
-    let addr = SocketAddr::from((ip, port));
-    tracing::info!("listening on http://{}", addr);
-    if let Err(e) = Server::bind(&addr).serve(app.into_make_service()).await {
-        return Err(RingError::String(format!("Server fail: {e}")));
-    }
+    let mut futures = vec![];
+    futures.push(Server::bind(&SocketAddr::from((ip, state.port_http))).serve(app.clone().into_make_service()));
+    futures.push(Server::bind(&SocketAddr::from((ip, state.port_https))).serve(app.clone().into_make_service()));
+    tracing::info!("listening");
+    
+    futures::future::join_all(futures).await;
         
 
     Ok(())

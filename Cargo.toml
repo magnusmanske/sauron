@@ -15,6 +15,7 @@ mysql_async = "*"
 async-session = "3"
 axum = { version="*", features = ["headers","multipart"] }
 axum-extra = { version="*", features = ["spa"] }
+axum-server = { version = "*" , features = ["tls-rustls"] }
 headers = "0.3"
 http = "0.2"
 oauth2 = "4.1"
@@ -22,7 +23,5 @@ reqwest = { version="*", features = ["json"] }
 serde = "1"
 serde_json = "1"
 async-trait = "*"
-
-#lazy_static = "1"
-#regex = "1"
-#clap = { version = "4", features = ["derive"] }
+tokio-rustls = "*"
+rustls-pemfile = "*"

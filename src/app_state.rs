@@ -9,7 +9,8 @@ use crate::entity::{Entity, EntityGroup};
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub config: Value,
-    pub port: u16,
+    pub port_http: u16,
+    pub port_https: u16,
     pub server: String,
     pub store: DatabaseSessionStore,
     pub db_pool: mysql_async::Pool,
@@ -28,7 +29,8 @@ impl AppState {
     pub fn from_config(config: Value) -> Self {
         let db_pool = Self::create_pool(&config["database"]);
         Self {
-            port: config["port"].as_u64().expect("Port number in config file missing or not an integer") as u16,
+            port_http: config["port_http"].as_u64().expect("Port number in config file missing or not an integer") as u16,
+            port_https: config["port_https"].as_u64().expect("Port number in config file missing or not an integer") as u16,
             server: config["server"].as_str().expect("server URL not in config").to_string(),
             db_pool: db_pool.clone(),
             store: DatabaseSessionStore{pool: Some(db_pool.clone())},
@@ -115,8 +117,8 @@ impl AppState {
     }
 
     pub fn get_redirect_server(&self) -> String {
-        match self.port {
-            80 => format!("https://{}",self.server),
+        match self.port_https {
+            443 => format!("https://{}",self.server),
             port => format!("https://{}:{}",self.server,port),
         }
     }
