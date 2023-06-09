@@ -79,18 +79,15 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>, 
     _cookies: Option<TypedHeader<headers::Cookie>>,
 ) -> impl IntoResponse {
-    println!("A");
     let code = match params.get("code") {
         Some(code) => code,
         None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
     
-    println!("B");
     let redirect_url = format!("{}/redirect/orcid",state.get_redirect_server());
     let client_id = state.config["systems"]["orcid"]["client_id"].as_str().expect("ORCID client_id");
     let client_secret = state.config["systems"]["orcid"]["client_secret"].as_str().expect("ORCID client_secret");
     let body = format!("client_id={client_id}&client_secret={client_secret}&grant_type=authorization_code&code={code}&redirect_uri={redirect_url}");
-    println!("C");
 
     let j = reqwest::Client::new()
         .post("https://orcid.org/oauth/token")
@@ -103,17 +100,12 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
         .json::<Value>().await
         .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    println!("D: {j}");
-
     let name = j["name"].as_str()
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR)?
         .to_string();
-    println!("E");
     let external_id = j["orcid"].as_str()
         .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR)?
         .to_string();
-
-    println!("F");
 
     let mut user = ExternalSystemUser {
         id: None,
@@ -126,7 +118,6 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
         .add_to_database(state.clone())
         .await
         .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
-    println!("G");
 
     let cookie = user.set_cookie(state).await
         .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -135,7 +126,6 @@ async fn redirect_orcid(State(state): State<Arc<AppState>>,
     let mut headers = HeaderMap::new();
     let val = cookie.parse().map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
     headers.insert(SET_COOKIE, val);
-    println!("H");
 
     Ok((headers, Redirect::to("/")))
 }
