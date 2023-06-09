@@ -21,6 +21,16 @@ pub mod external_system;
 pub mod entity;
 
 
+async fn redirect_to_orcid(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let redirect_url = format!("{}/redirect/orcid",state.get_redirect_server());
+    let client_id = match state.config["systems"]["orcid"]["client_id"].as_str() {
+        Some(id) => id,
+        None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    let url = format!("https://orcid.org/oauth/authorize?client_id={client_id}&response_type=code&scope=/authenticate&redirect_uri={redirect_url}");
+    Ok(Redirect::to(&url))
+}
+
 async fn auth_info(State(state): State<Arc<AppState>>, cookies: Option<TypedHeader<headers::Cookie>>,) -> impl IntoResponse {
     let user = ExternalSystemUser::from_cookies(&state, &cookies).await;
     let j = json!({"status":"OK","user":user});
@@ -127,6 +137,7 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
     tracing_subscriber::fmt::init();
 
     let app = Router::new()
+        .route("/redirect_to/orcid", get(redirect_to_orcid))
         .route("/redirect/orcid", get(redirect_orcid))
         .route("/auth/info", get(auth_info))
         .route("/user/entities", get(user_entities))

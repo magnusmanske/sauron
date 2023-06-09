@@ -113,4 +113,11 @@ impl AppState {
             });
         Ok(())
     }
+
+    pub fn get_redirect_server(&self) -> String {
+        match self.port {
+            80 => format!("https://{}",self.server),
+            port => format!("https://{}:{}",self.server,port),
+        }
+    }
 }

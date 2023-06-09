@@ -3,6 +3,7 @@
 let router ;
 let app ;
 let user = {is_logged_in:false};
+let gobal_config = {};
 
 $(document).ready ( function () {
     Promise.all ( [
@@ -22,13 +23,6 @@ $(document).ready ( function () {
                 })
                 .catch(reject);
             } ) ,
-            // new Promise(function(resolve, reject) {
-            //     $.get ( './config.json' , function ( d ) {
-            //         wd.api = d.wd.api ;
-            //         wd.sparql_url = d.wd.sparql ;
-            //         resolve() ;
-            //     } , 'json' ) ;
-            // } )
     ] ) .then ( () => {
 
         const routes = [
