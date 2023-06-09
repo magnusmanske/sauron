@@ -160,8 +160,8 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
         .layer(CompressionLayer::new())
         ;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], state.port_https));
-    tracing::debug!("listening on {}", addr);
+    let addr = SocketAddr::from(([0, 0, 0, 0], state.port_https));
+    tracing::info!("listening on {}", addr);
     axum_server::bind_rustls(addr, config).serve(app.into_make_service()).await?;
     Ok(())
 }
