@@ -135,16 +135,15 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
     tracing_subscriber::fmt::init();
 
     let cert_dir = "."; // env!("CARGO_MANIFEST_DIR")
-    let config = RustlsConfig::from_pem_file(
-        PathBuf::from(cert_dir)
-            .join("self_signed_certs")
-            .join("cert.pem"),
-        PathBuf::from(cert_dir)
-            .join("self_signed_certs")
-            .join("key.pem"),
-    )
-    .await
-    .unwrap();
+    let cert_path = match state.config["ssl"]["cert"].as_str() {
+        Some(s) => PathBuf::from(s),
+        None => PathBuf::from(cert_dir).join("self_signed_certs").join("cert.pem")
+    };
+    let key_path = match state.config["ssl"]["key"].as_str() {
+        Some(s) => PathBuf::from(s),
+        None => PathBuf::from(cert_dir).join("self_signed_certs").join("key.pem")
+    };
+    let config = RustlsConfig::from_pem_file(cert_path,key_path).await.unwrap();
 
 
     let app = Router::new()
