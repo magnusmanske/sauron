@@ -1,1 +1,1 @@
-1 2 10 * * sudo /opt/certbot/bin/pip install --upgrade certbot
+1 2 10 * * "sudo /opt/certbot/bin/pip install --upgrade certbot"
