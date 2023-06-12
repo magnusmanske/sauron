@@ -1,8 +1,6 @@
 use std::{cmp::Ordering, collections::HashMap};
-
-use mysql_async::Row;
 use serde::{Serialize, Deserialize};
-
+use crate::db_tables::DbTableEntity;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq)]
 pub struct Entity {
@@ -14,13 +12,14 @@ pub struct Entity {
 }
 
 impl Entity {
-    pub fn from_row(row: &Row) -> Self {
+    pub fn from_table_entity(e: &DbTableEntity) -> Self {
         Self {
-            id: row.get(0).unwrap(),
-            name: row.get(1).unwrap(),
+            id: e.id,
+            name: e.name.to_owned(),
             child_ids: vec![],
             parent_ids: vec![],
             rights: vec![],
+            
         }
     }
 }

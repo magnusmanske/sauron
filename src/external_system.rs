@@ -81,13 +81,17 @@ impl ExternalSystemUser {
         Some(ret)
     }
 
-    pub async fn get_entities_with_access(&self, app: &Arc<AppState>) -> Result<EntityGroup,RingError> {
-        let sql = r#"SELECT `entity_id`,`right` FROM `access` WHERE user_id=:user_id"# ;
-        let user_id = self.id;
-
-        let res = app.db_conn().await?
-            .exec_iter(sql,params! {user_id}).await?
-            .map_and_drop(|row|  mysql_async::from_row::<(usize,String)>(row) ).await?;
+    pub fn get_entities_with_access(&self, app: &Arc<AppState>) -> EntityGroup {
+        let user_id = match self.id {
+            Some(id) => id as usize,
+            None => return EntityGroup::from_vec(vec![]),
+        };
+        let res: Vec<(usize,String)> = app.db_access
+            .iter()
+            .filter(|(_id,a)|a.user_id==user_id)
+            .map(|(_id,a)|(a.entity_id,a.right.to_owned()))
+            .collect();
+        
         let mut entity_ids: Vec<usize> = res
             .iter()
             .map(|(id,_right)|*id)
@@ -95,7 +99,7 @@ impl ExternalSystemUser {
         entity_ids.sort();
         entity_ids.dedup();
 
-        let mut entities = app.load_entities(&entity_ids).await?;
+        let mut entities = app.load_entities(&entity_ids);
         res
             .iter()
             .for_each(|(id,right)|{
@@ -103,8 +107,8 @@ impl ExternalSystemUser {
                     entity.rights.push(right.to_owned())
                 }
             });
-        app.annotate_entities(&mut entities).await?;
-        Ok(entities)
+        app.annotate_entities(&mut entities);
+        entities
     }
 
 }

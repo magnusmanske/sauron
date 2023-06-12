@@ -1,10 +1,15 @@
+use std::collections::HashMap;
 use std::{env, fs::File, time::Duration};
 use mysql_async::prelude::*;
 use mysql_async::{Conn, PoolOpts, PoolConstraints, OptsBuilder, Opts};
 use serde_json::Value;
+use crate::db_tables::{DbTableAccess, DbTableConnection, DbTableEntity};
 use crate::error::RingError;
 use crate::database_session_store::DatabaseSessionStore;
 use crate::entity::{Entity, EntityGroup};
+
+
+// ************************************************************************************************
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -14,28 +19,51 @@ pub struct AppState {
     pub server: String,
     pub store: DatabaseSessionStore,
     pub db_pool: mysql_async::Pool,
+    pub db_access: HashMap<usize,DbTableAccess>,
+    pub db_connection: HashMap<usize,DbTableConnection>,
+    pub db_entity: HashMap<usize,DbTableEntity>,
 }
 
 impl AppState {
-    pub fn from_config_file(filename: &str) -> Result<Self,RingError> {
+    pub async fn from_config_file(filename: &str) -> Result<Self,RingError> {
         let mut path = env::current_dir().expect("Can't get CWD");
         path.push(filename);
         let file = File::open(&path)?;
         let config: Value = serde_json::from_reader(file)?;
-        Ok(Self::from_config(config))
+        let ret = Self::from_config(config).await?;
+        Ok(ret)
     }
 
     /// Creatre an AppState object from a config JSON object
-    pub fn from_config(config: Value) -> Self {
+    pub async fn from_config(config: Value) -> Result<Self,RingError> {
         let db_pool = Self::create_pool(&config["database"]);
-        Self {
+        let mut ret = Self {
             port_http: config["port_http"].as_u64().expect("Port number in config file missing or not an integer") as u16,
             port_https: config["port_https"].as_u64().expect("Port number in config file missing or not an integer") as u16,
             server: config["server"].as_str().expect("server URL not in config").to_string(),
             db_pool: db_pool.clone(),
-            store: DatabaseSessionStore{pool: Some(db_pool.clone())},
+            store: DatabaseSessionStore::new_with_pool(&db_pool).await?,
             config: config,
-        }
+            db_access: HashMap::new(),
+            db_connection: HashMap::new(),
+            db_entity: HashMap::new(),
+        };
+        ret.init_from_db().await?;
+        Ok(ret)
+    }
+
+    async fn init_from_db(&mut self) -> Result<(),RingError> {
+        let mut conn = self.db_conn().await?;
+        self.db_access = conn
+            .exec_iter("SELECT `id`,`user_id`,`entity_id`,`right` FROM `access`",()).await?
+            .map_and_drop(|row| DbTableAccess::from_row(&row) ).await?.into_iter().map(|x|(x.id,x)).collect();
+        self.db_connection = conn
+            .exec_iter("SELECT `id`,`parent_id`,`child_id` FROM `connection`",()).await?
+            .map_and_drop(|row| DbTableConnection::from_row(&row) ).await?.into_iter().map(|x|(x.id,x)).collect();
+        self.db_entity = conn
+            .exec_iter("SELECT `id`,`name` FROM `entity`",()).await?
+            .map_and_drop(|row| DbTableEntity::from_row(&row) ).await?.into_iter().map(|x|(x.id,x)).collect();
+        Ok(())
     }
 
     /// Helper function to create a DB pool from a JSON config object
@@ -57,63 +85,48 @@ impl AppState {
         self.db_pool.get_conn().await
     }
 
-    pub async fn load_entities(&self, entity_ids: &[usize]) -> Result<EntityGroup,RingError> {
-        if entity_ids.is_empty() {
-            return Ok(EntityGroup::default());
-        }
-        let entity_ids: Vec<_> = entity_ids.iter().map(|i|format!("{i}")).collect();
-        let entity_ids = entity_ids.join(",");
-        let sql = format!("SELECT id,name FROM `entity` WHERE id IN ({})",entity_ids);
-        let res = self.db_conn().await?
-            .exec_iter(sql,()).await?
-            .map_and_drop(|row| Entity::from_row(&row) ).await?;
-        Ok(EntityGroup::from_vec(res))
+    pub fn load_entities(&self, entity_ids: &[usize]) -> EntityGroup {
+        let v: Vec<Entity> = entity_ids
+            .iter()
+            .filter_map(|id|self.db_entity.get(id))
+            .map(|e|Entity::from_table_entity(e))
+            .collect();
+        EntityGroup::from_vec(v)
     }
 
     /// Returns Vec<(parent,child)>
-    async fn load_entity_children(&self, entity_ids: &[usize]) -> Result<Vec<(usize,usize)>,RingError> {
-        if entity_ids.is_empty() {
-            return Ok(vec![]);
-        }
-        let entity_ids: Vec<_> = entity_ids.iter().map(|i|format!("{i}")).collect();
-        let entity_ids = entity_ids.join(",");
-        let sql = format!("SELECT DISTINCT `parent`,`child` FROM `connection` WHERE `parent` IN ({})",entity_ids);
-        let res = self.db_conn().await?
-            .exec_iter(sql,()).await?
-            .map_and_drop(|row|  mysql_async::from_row::<(usize,usize)>(row) ).await?;
-        Ok(res)
+    fn load_entity_children(&self, entity_ids: &[usize]) -> Vec<(usize,usize)> {
+        self.db_connection
+            .iter()
+            .filter(|(_id,c)|entity_ids.contains(&c.parent_id))
+            .map(|(_id,c)|(c.parent_id,c.child_id))
+            .collect()
     }
 
     /// Returns Vec<(parent,child)>
-    async fn load_entity_parents(&self, entity_ids: &[usize]) -> Result<Vec<(usize,usize)>,RingError> {
-        if entity_ids.is_empty() {
-            return Ok(vec![]);
-        }
-        let entity_ids: Vec<_> = entity_ids.iter().map(|i|format!("{i}")).collect();
-        let entity_ids = entity_ids.join(",");
-        let sql = format!("SELECT DISTINCT `parent`,`child` FROM `connection` WHERE `child` IN ({})",entity_ids);
-        let res = self.db_conn().await?
-            .exec_iter(sql,()).await?
-            .map_and_drop(|row|  mysql_async::from_row::<(usize,usize)>(row) ).await?;
-        Ok(res)
+    fn load_entity_parents(&self, entity_ids: &[usize]) -> Vec<(usize,usize)> {
+        self.db_connection
+            .iter()
+            .filter(|(_id,c)|entity_ids.contains(&c.child_id))
+            .map(|(_id,c)|(c.parent_id,c.child_id))
+            .collect()
     }
 
-    pub async fn annotate_entities(&self, entities: &mut EntityGroup) -> Result<(),RingError> {
-        self.load_entity_children(&entities.keys()).await?
+    pub fn annotate_entities(&self, entities: &mut EntityGroup) {
+        self.load_entity_children(&entities.keys())
             .iter()
             .for_each(|(parent,child)|{
                 if let Some(entity) = entities.get_mut(*parent) {
                     entity.child_ids.push(*child)
                 }
             });
-        self.load_entity_parents(&entities.keys()).await?
+        self.load_entity_parents(&entities.keys())
             .iter()
             .for_each(|(parent,child)|{
                 if let Some(entity) = entities.get_mut(*child) {
                     entity.parent_ids.push(*parent)
                 }
             });
-        Ok(())
     }
 
     pub fn get_redirect_server(&self) -> String {

@@ -15,6 +15,7 @@ use crate::app_state::AppState;
 use crate::external_system::*;
 
 pub mod error;
+pub mod db_tables;
 pub mod app_state;
 pub mod database_session_store;
 pub mod external_system;
@@ -50,10 +51,7 @@ async fn user_entities(State(state): State<Arc<AppState>>, cookies: Option<Typed
         Some(user) => user,
         None => return (StatusCode::OK, Json(json!({"status":"not_logged_in"}))),
     };
-    let entities = match user.get_entities_with_access(&state).await {
-        Ok(entities) => entities,
-        Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
-    };
+    let entities = user.get_entities_with_access(&state);
     let j = json!({"status":"OK","entities":entities.as_sorted_vec()});
     (StatusCode::OK, Json(j))
 }
@@ -63,13 +61,8 @@ async fn entities(State(state): State<Arc<AppState>>, Path(entity_ids): Path<Str
         .split(',')
         .filter_map(|e|e.parse::<usize>().ok())
         .collect();
-    let mut entities = match state.load_entities(&entity_ids).await {
-        Ok(entities) => entities,
-        Err(e) => return (StatusCode::OK, Json(json!({"status":e.to_string()}))),
-    };
-    if let Err(e) = state.annotate_entities(&mut entities).await {
-        return (StatusCode::OK, Json(json!({"status":e.to_string()})))
-    };
+    let mut entities = state.load_entities(&entity_ids);
+    state.annotate_entities(&mut entities);
     let j = json!({"status":"OK","entities":entities.as_sorted_vec()});
     (StatusCode::OK, Json(j))
 }
@@ -167,7 +160,7 @@ pub async fn run_server(state: Arc<AppState>) -> Result<(), RingError> {
 
 #[tokio::main]
 async fn main() -> Result<(), RingError> {
-    let state = Arc::new(AppState::from_config_file("config.json").expect("app creation failed"));
+    let state = Arc::new(AppState::from_config_file("config.json").await.expect("app creation failed"));
     run_server(state).await?;
     Ok(())
 }
