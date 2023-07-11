@@ -49,7 +49,7 @@
                         <div style="margin-top: 1rem;" v-if="is_admin()">
                             <div v-if="add_access_visible">
                                 <a href="#" style="color: red;" @click.prevent="add_access_visible=false">&CircleMinus;</a>
-                                Add access <search_dropdown mode="access" allow_new="1" :selected="selected_access" @selected="selected_access=$event"></search_dropdown>
+                                Add access <search_dropdown mode="access" allow_new="1" :selected="selected_access" @selected="selected_access=$event" placeholder="any lower case text"></search_dropdown>
                                 for user <search_dropdown mode="user" :selected="selected_user" @selected="selected_user=$event"></search_dropdown>
                                 <span v-if="typeof selected_access!='undefined' && typeof selected_user!='undefined'">
                                     <button class="btn btn-outline-primary" @click.prevent="add_access">

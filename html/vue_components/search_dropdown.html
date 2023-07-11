@@ -28,7 +28,7 @@ div.candidate-box {
     </span>
     <span v-else>
         <div>
-            <input type="text" class="form-control sd-input-field" v-model="query" @keyup="on_change" @keydown="on_change" @change="on_change" />
+            <input type="text" :placeholder="placeholder" class="form-control sd-input-field" v-model="query" @keyup="on_change" @keydown="on_change" @change="on_change" />
             <button v-if="allow_new" style="color: green;" @click.prevent="set_selection(query)" title="Use value as new">✓</button>
         </div>
         <div v-if="candidates.length>0" class="candidate-box">
@@ -55,7 +55,7 @@ div.candidate-box {
 'use strict';
 
 Vue.component ( 'search_dropdown' , {
-    props : [ 'mode','selected','allow_new' ] ,
+    props : [ 'mode','selected','allow_new','placeholder' ] ,
     data : function () { return { query:'',last_query_run:'',candidates:[] } } ,
     created : function () {
     } ,
