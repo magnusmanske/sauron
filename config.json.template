@@ -15,6 +15,7 @@
         "cert":"/path/to/fullchain.pem",
         "key":"/path/to/privkey.pem"
     },
+    "use_cache":true,
     "server":"SERVER_DOMAIN",
     "port_http":80,
     "port_https":443

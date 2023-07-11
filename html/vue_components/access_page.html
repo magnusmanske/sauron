@@ -1,0 +1,117 @@
+<style>
+</style>
+
+<template id='access-page-template'>
+	<div class='container'>
+        <h2>Entity access management</h2>
+        <div v-if='error!=""' class="alert alert-danger" role="alert">{{error}}</div>
+
+        <div v-if="loaded">
+            <p class='lead'>
+                User <user :user="user"></user> has requested acccess to entity:
+            </p>
+            <entity :entity="entities[entity_id]" detailed="1"></entity>
+
+            <p v-if="is_admin" class='lead'>
+                You have admin rights on the entity. You can grant <user :user="user"></user> these rights:
+                <ul>
+                    <li v-for="state,right in requested_rights">
+                        <label>
+                            <input type="checkbox" v-model="requested_rights[right]" value="true" />
+                            <span v-if="right=='admin'"><span style="color: red; font-weight: bold;">{{right}}</span> (this will allow the user to essentially co-own the entity)</span>
+                            <span v-else>{{right}}</span>
+                        </label>
+                    </li>
+                </ul>
+                <div><i>Please note:</i> The new rights will apply to this entity and all sub-entities.</div>
+                <button class="btn btn-outline-primary" @click.prevent="grant_rights">Grant selected rights</button>
+            </p>
+            <p v-else class='lead'>
+                You do <i><b>not</b></i>have admin rights on the entity!
+            </p>
+        </div>
+        
+	</div>
+</template>
+
+<script>
+'use strict';
+
+let AccessPage = Vue.extend ( {
+        props : ['entity_id','user_id','rights'] ,
+        data : function () { return {
+            loaded:false,
+            error:'',
+            requested_rights:{},
+            entity_ids:[],
+            user:{},
+            entities:{},
+            is_admin:false,
+        } } ,
+        created : function () {
+            let self = this;
+            self.rights.split(',').forEach(function(right){
+                right = right.trim().toLowerCase();
+                self.requested_rights[right] = true ;
+            });
+            Promise.all([
+                new Promise((resolve, reject) => {
+                    self.load_entities([self.entity_id*1]).then((entities) => {
+                        self.entities = entities;
+                        entities.forEach(e => {this.entities[e.id]=e});
+                        resolve()
+                    })
+                }),
+                new Promise((resolve, reject) => {
+                    self.load_user_data(self.user_id).then((user) => {
+                        self.user = user;
+                        resolve()
+                    })
+                })
+            ]).then(() => {
+                    self.is_admin = self.entities[self.entity_id].rights.indexOf('admin')>-1;
+                    self.loaded=true;
+                })
+                .catch(function(error){self.error = error;});
+        } ,
+        methods : {
+            load_entities(entity_ids) {
+                return new Promise(function(resolve, reject) {
+                    if ( entity_ids.length==0 ) return resolve([]);
+                    fetch(new Request("/user/entity_rights/"+entity_ids.join(",")))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) return reject(data.status);
+                            resolve(data.entities);
+                        })
+                        .catch(reject);
+                    })
+            } ,
+            load_user_data(user_id) {
+                return new Promise(function(resolve, reject) {
+                    fetch(new Request("/user/info/"+user_id))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) return reject(data.status);
+                            resolve(data.user);
+                        })
+                        .catch(reject);
+                    })
+            },
+            grant_rights() {
+                let self = this ;
+                let rights = Object.entries(self.requested_rights)
+                    .filter(([right,is_selected])=>is_selected)
+                    .map(([right,is_selected])=>right);
+                fetch(new Request("/rights/set/"+self.entity_id+"/"+self.user_id+"/"+rights.join(",")))
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if ( data.status!='OK' ) return reject(data.status);
+                        resolve(data.user);
+                    })
+                    .catch(reject);
+            }
+        },
+        template:'#access-page-template'
+    } ) ;
+</script>

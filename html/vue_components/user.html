@@ -1,0 +1,35 @@
+<style>
+</style>
+
+<template id='user-template'>
+<span>
+    <span>
+        <i>{{user.name}}</i>
+        ({{user.system}}:
+        <span v-if="user.external_url==''" class="tt">{{user.external_id}}</span>
+        <span v-else><a target="_blank" :href="user.external_url">{{user.external_id}}</a></span>
+        )
+        <span v-if="its_me()"><b>You!</b></span>
+    </span>
+</span>
+</template>
+
+
+
+<script>
+'use strict';
+
+Vue.component ( 'user' , {
+    props : [ 'user' ] ,
+    data : function () { return {  } } ,
+    created : function () {
+    } ,
+    methods : {
+        its_me() {
+            return this.user.id==user.id;
+        },
+    } ,
+    template : '#user-template'
+} ) ;
+
+</script>

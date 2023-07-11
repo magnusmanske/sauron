@@ -15,14 +15,23 @@ h1 {
 	border-bottom: 1px solid #008AD8;
 	padding-bottom: 5px;
 }
+.tt {
+	font-family: 'Courier New', Courier, monospace;
+}
 </style>
 </head>
 
 <body>
 	<div id='app' class='container-fluid'>
+		<div style="float: right;">
+			<div id="login"><i>Not logged in</i></div>
+			<a href="/user/logout" id="logout" style="display: none;">Log out</a>
+		</div>
 		<h1>
-			<img src="favicon.ico" alt="Eye of Sauron" style="height: 2.5rem;" />
-			<u>SA</u>nger <u>U</u>ser <u>R</u>ights <u>O</u>rganizatio<u>N</u>
+			<a href="/" style="color: black;">
+				<img src="favicon.ico" alt="Eye of Sauron" style="height: 2.5rem;" />
+				<u>SA</u>nger <u>U</u>ser <u>R</u>ights <u>O</u>rganizatio<u>N</u>
+			</a>
 		</h1>
 		<router-view :key="$route.path">Loading...</router-view>
 	</div>

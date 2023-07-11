@@ -1,0 +1,99 @@
+<style>
+span.selected {
+    background-color: #a0e49f;
+    padding: 2px;
+    margin-right: 2px;
+}
+div.candidate-box {
+    border: 1px solid rgb(206, 212, 218);
+    margin-top: 0.1rem;
+    padding: 2px;
+}
+.sd-input-field {
+    display: inline-block;
+    width: auto;
+}
+</style>
+
+<template id='search-dropdown-template'>
+<div style="display: inline-block; vertical-align: top;">
+    <span v-if="typeof selected!='undefined'" class="selected">
+        <span v-if="mode=='user'">
+            <user :user="selected"></user>
+        </span>
+        <span v-else>
+            {{selected}}
+        </span>
+        <a href="#" style="color: red;" @click.prevent="set_selection(undefined)">✘</a>
+    </span>
+    <span v-else>
+        <div>
+            <input type="text" class="form-control sd-input-field" v-model="query" @keyup="on_change" @keydown="on_change" @change="on_change" />
+            <button v-if="allow_new" style="color: green;" @click.prevent="set_selection(query)" title="Use value as new">✓</button>
+        </div>
+        <div v-if="candidates.length>0" class="candidate-box">
+            <div v-for="candicate in candidates">
+                <a href="#" @click.prevent="set_selection(candicate)">
+                    <div style="width: 100%;">
+                        <span v-if="mode=='user'">
+                            <user :user="candicate"></user>
+                        </span>
+                        <span v-else>
+                            {{candicate}}
+                        </span>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </span>
+</div>
+</template>
+
+
+
+<script>
+'use strict';
+
+Vue.component ( 'search_dropdown' , {
+    props : [ 'mode','selected','allow_new' ] ,
+    data : function () { return { query:'',last_query_run:'',candidates:[] } } ,
+    created : function () {
+    } ,
+    methods : {
+        on_change() {
+            if ( this.query=='' ) {
+                this.last_query_run = '' ;
+                this.candidates = [] ;
+                return;
+            }
+            if ( this.query.length<3 ) return ;
+            this.run_query(this.query);
+        } ,
+        error(s) {
+            this.error = s;
+        },
+        run_query(query) {
+            if ( query==this.last_query_run ) return ;
+            this.error = '';
+            this.last_query_run = query ;
+            fetch(new Request("/search/"+this.mode+"/"+query))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) return this.error(data.status);
+                            this.candidates = Object.values(data.results);
+                        })
+                        .catch(function(){this.error("API query error")});
+
+        },
+        set_selection(candidate) {
+            // this.selected = candidate;
+            this.candidates = [];
+            this.query = '';
+            this.last_query_run = '';
+            this.$emit('selected',candidate) ;
+        }
+    } ,
+    template : '#search-dropdown-template'
+} ) ;
+
+</script>

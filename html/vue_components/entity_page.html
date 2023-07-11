@@ -1,0 +1,252 @@
+<style>
+</style>
+
+<template id='entity-page-template'>
+	<div class='container'>
+        <div v-if='error!=""' class="alert alert-danger" role="alert">{{error}}</div>
+        <div v-if="loaded">
+            <p>
+                <entity :entity="entity" detailed="1"></entity>
+            </p>
+            <div class="card" style="margin-bottom: 1rem;" v-if="entity.parent_ids.length>0">
+                <div class="card-body">
+                    <h5 class="card-title">Parent elements</h5>
+                    <div class="card-text">
+                        <div v-for="id in entity.parent_ids">
+                            <entity :entity="entities[id]" no_heading=1 detailed=1></entity>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Access rights</h5>
+                    <div class="card-text">
+                        <div>
+                            <small><i>Note:</i> These rights can come from the entity, or any of its parents.</small>
+                        </div>
+                        <div v-for="right in rights">
+                            <b>{{right[1]}}</b> :
+                            <user :user="users[right[0]]"></user>
+                            <a v-if="is_admin()" href="#" style="color: red;" @click.prevent="remove_access(right[0],right[1])">✘</a>
+                        </div>
+                        <div style="margin-top: 1rem;" v-if="access_requests.length>0">
+                            <h5>Access requests</h5>
+                            <div v-for="ar in access_requests">
+                                <user :user="users[ar.user_id]"></user>
+                                requests access
+                                <span v-if="ar.note!=''">: {{ar.note}}</span>
+                                <a v-if="is_admin()" href="#" style="color: green;" @click.prevent="grant_access(ar.user_id)" title="grant access">✓</a>
+                            </div>
+                        </div>
+                        <div style="margin-top: 1rem;" v-if="is_logged_in() && !is_admin()">
+                            <form class="form-inline" @submit.prevent="request_access">
+                                Request access &nbsp;
+                                <input type="text" class="form-control" v-model="access_request_note" placeholder="Note to admin" />
+                                <input type="submit" class="btn btn-outline-success" value="Request" />
+                            </form>
+                        </div>
+                        <div style="margin-top: 1rem;" v-if="is_admin()">
+                            <div v-if="add_access_visible">
+                                <a href="#" style="color: red;" @click.prevent="add_access_visible=false">&CircleMinus;</a>
+                                Add access <search_dropdown mode="access" allow_new="1" :selected="selected_access" @selected="selected_access=$event"></search_dropdown>
+                                for user <search_dropdown mode="user" :selected="selected_user" @selected="selected_user=$event"></search_dropdown>
+                                <span v-if="typeof selected_access!='undefined' && typeof selected_user!='undefined'">
+                                    <button class="btn btn-outline-primary" @click.prevent="add_access">
+                                        Add
+                                    </button>
+                                </span>
+                            </div>
+                            <div v-else>
+                                <a href="#" style="color: green;" @click.prevent="add_access_visible=true">&CirclePlus;</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="margin-top: 1rem;">
+                <div class="card-body">
+                    <h5 class="card-title">Child elements</h5>
+                    <div class="card-text">
+                        <div v-for="id in entity.child_ids">
+                            <entity :entity="entities[id]" no_heading=1 detailed=1></entity>
+                        </div>
+                        <div v-if="is_admin()">
+                            <div v-if="add_entity_visible" class="form-inline">
+                                <a href="#" style="color: red;" @click.prevent="add_entity_visible=false">&CircleMinus;</a>
+                                <input class="form-control" type="text" v-model="new_entity_name" placeholder="Name" />
+                                <input class="form-control" type="text" v-model="new_entity_extid" placeholder="External ID (optional)" />
+                                <button class="btn btn-outline-primary" @click.prevent="add_entity">
+                                    Add
+                                </button>
+                            </div>
+                            <div v-else>
+                                <a href="#" style="color: green;" @click.prevent="add_entity_visible=true">&CirclePlus;</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div v-else>
+            <i>Loading...</i>
+        </div>
+	</div>
+</template>
+
+<script>
+'use strict';
+
+let EntityPage = Vue.extend ( {
+        props : ['entity_id'] ,
+        data : function () { return {
+            loaded:false,
+            error:'',
+            entity:{},
+            rights:[],
+            users:{},
+            entities:{},
+            selected_access: undefined,
+            selected_user: undefined,
+            add_access_visible: false,
+            add_entity_visible: false,
+            new_entity_name: '',
+            new_entity_extid: '',
+            access_request_note: '',
+            access_requests: [],
+        } } ,
+        created : function () {
+            this.load_all();
+        } ,
+        methods : {
+            load_all() {
+                this.load_main_entities()
+                .then((entity_ids)=>{
+                    this.entity_ids = entity_ids;
+                    return this.load_entities(entity_ids);
+                })
+                .then((entities) => {
+                    let parent_ids = entities.flatMap(e=>e.parent_ids);
+                    let child_ids = entities.flatMap(e=>e.child_ids);
+                    let entity_ids = parent_ids.concat(child_ids);
+                    entities.forEach(e => {this.entities[e.id]=e})
+                    return this.load_entities(entity_ids);
+                })
+                .then((entities) => {
+                    entities.forEach(e => {this.entities[e.id]=e})
+                    this.entity = this.entities[this.entity_id];
+                    this.load_rights();
+                })
+                .catch((error)=>{
+                    this.error = error;
+                })
+            },
+            is_admin () {
+                let ret = false;
+                this.rights.forEach(function(v){ if(v[0]==user.id && v[1]=='admin') ret = true; });
+                return ret;
+            },
+            is_logged_in() {
+                return user.is_logged_in;
+            },
+            load_main_entities() {
+                let self = this;
+                return new Promise(function(resolve, reject) {
+                    let entity_ids = [self.entity_id*1];
+                    self.load_entities(entity_ids)
+                        .then((entities) => resolve(entity_ids))
+                        .catch(reject);
+                });
+            } ,
+            load_all_rights(entity_id) {
+                return new Promise(function(resolve, reject) {
+                    fetch(new Request("/rights/get/entities/"+entity_id))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) {
+                                this.error = data.status;
+                                return reject();
+                            }
+                            resolve(data);
+                        })
+                        .catch(reject);
+                })
+            },
+            load_entities(entity_ids) {
+                return new Promise(function(resolve, reject) {
+                    if ( entity_ids.length==0 ) return resolve([]);
+                    fetch(new Request("/entities/"+entity_ids.join(",")))
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if ( data.status!='OK' ) return reject(data.status);
+                            resolve(data.entities);
+                        })
+                        .catch(reject);
+                    })
+            } ,
+            set_error(s) {
+                this.error = s;
+            },
+            request_access() {
+                fetch(new Request("/rights/request/"+this.entity_id+"/"+this.access_request_note))
+                .then((response) => response.json())
+                    .then((data) => {
+                        if ( data.status!='OK' ) return this.set_error(data.status);
+                    })
+                    .catch((error)=>{ this.error = error; })
+            },
+            remove_access(user_id,right) {
+                fetch(new Request("/rights/remove/"+this.entity_id+"/"+user_id+"/"+right))
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if ( data.status!='OK' ) return this.set_error(data.status);
+                        this.load_rights();
+                    })
+                    .catch((error)=>{ this.error = error; })
+            },
+            load_rights() {
+                this.load_all_rights(this.entity_id)
+                .then((data) => { // TODO in parallel with load_main_entities() to make loading faster 
+                    this.users = data.users;
+                    this.rights = data.rights[this.entity_id];
+                    this.access_requests = data.access_requests;
+                    this.loaded = true;
+                })
+                .catch((error)=>{ this.error = error; })
+            },
+            add_access() {
+                let right = this.selected_access ;
+                let user_id = this.selected_user.id ;
+
+                fetch(new Request("/rights/add/"+this.entity_id+"/"+user_id+"/"+right))
+                .then((response) => response.json())
+                .then((data) => {
+                    if ( data.status!='OK' ) return this.error(data.status);
+                    this.load_rights();
+                })
+                .catch((error)=>{ this.error = error;})
+
+                this.selected_access = undefined;
+                this.selected_user = undefined;
+            },
+            grant_access(user_id) {
+                this.selected_access = undefined ;
+                this.selected_user = this.users[user_id];
+                this.add_access_visible = true;
+            },
+            add_entity() {
+                fetch(new Request("/entity/add/child/"+this.entity_id+"/"+this.new_entity_name+"/"+this.new_entity_extid))
+                .then((response) => response.json())
+                .then((data) => {
+                    if ( data.status!='OK' ) return this.error(data.status);
+                    this.load_all();
+                })
+                .catch((error)=>{ this.error = error;})
+
+                this.new_entity_name = '';
+                this.new_entity_extid = '';
+            }
+        },
+        template:'#entity-page-template'
+    } ) ;
+</script>

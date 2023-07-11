@@ -3,7 +3,18 @@
 
 <template id='entity-template'>
 <div>
-<router-link :to="'/'+entity.id">{{entity.name}}</router-link>
+    <div v-if="detailed">
+        <div v-if="no_heading">
+            <b><router-link :to="'/entity/'+entity.id">#{{entity.id}}</router-link>: {{entity.name}}</b> <small v-if="typeof entity.external_id!='undefined' && entity.external_id!=''">[<span class="tt">{{entity.external_id}}</span>]</small>
+        </div>
+        <div v-else>
+            <h3><router-link :to="'/entity/'+entity.id">#{{entity.id}}</router-link>: {{entity.name}} <small v-if="typeof entity.external_id!='undefined' && entity.external_id!=''">[<span class="tt">{{entity.external_id}}</span>]</small></h3>
+        </div>
+    </div>
+    <div v-else>
+        <router-link :to="'/'+entity.id">{{entity.name}}</router-link>
+        [<router-link :to="'/entity/'+entity.id">&rArr;</router-link>]
+    </div>
 </div>
 </template>
 
@@ -13,8 +24,8 @@
 'use strict';
 
 Vue.component ( 'entity' , {
-    props : [ 'entity' ] ,
-    data : function () { return {  } } ,
+    props : [ 'entity','detailed','no_heading' ] ,
+    data : function () { return {} } ,
     created : function () {
     } ,
     methods : {

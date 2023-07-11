@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use async_session::{Session, SessionStore};
 use axum::TypedHeader;
-use mysql_async::{params, prelude::*};
 use serde_json::{Value, json};
 use serde::{Serialize,Deserialize};
 use crate::error::RingError;
@@ -13,19 +12,32 @@ pub static COOKIE_NAME: &str = "SESSION";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ExternalSystem {
     ORCID,
+    GOOGLE,
+    Unknown,
 }
 
 impl ExternalSystem {
     pub fn as_str(&self) -> &str {
         match self {
             Self::ORCID => "orcid",
+            Self::GOOGLE => "google",
+            Self::Unknown => "",
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn as_url(&self, external_id: &str) -> String {
+        match self {
+            Self::ORCID => format!("https://orcid.org/{external_id}"),
+            Self::GOOGLE => String::new(),
+            Self::Unknown => String::new(),
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "orcid" => Some(Self::ORCID),
-            _ => None,
+            "orcid" => Self::ORCID,
+            "google" => Self::GOOGLE,
+            _ => Self::Unknown,
         }
     }
 }
@@ -36,6 +48,7 @@ pub struct ExternalSystemUser {
     pub id: Option<u64>,
     pub system: ExternalSystem,
     pub name: String,
+    pub email: String,
     pub external_id: String,
     pub bespoke_data: Value,
 }
@@ -45,14 +58,32 @@ impl ExternalSystemUser {
         let system = self.system.as_str();
         let external_id = &self.external_id;
         let name = &self.name;
+        let email = &self.email;
         let bespoke_data = self.bespoke_data.to_string();
-        let sql = r#"INSERT INTO `user` (`system`,`external_id`,`name`,`bespoke_data`) 
-            VALUES (:system,:external_id,:name,:bespoke_data) 
-            ON DUPLICATE KEY UPDATE `bespoke_data`=:bespoke_data"# ;
-        let mut conn = state.db_conn().await?;
-        conn.exec_drop(sql, params!{system,external_id,name,bespoke_data}).await?;
-        self.id = conn.last_insert_id();
+        self.id = state.dal.write().await.add_user(system,external_id,name,email,&bespoke_data).await?;
         self.id.ok_or_else(||format!("User {system}:{external_id} was not added to database").into())
+    }
+
+    pub fn strip_private_data(&mut self) {
+        self.bespoke_data = Value::Null;
+        self.email = String::new();
+    }
+
+    pub fn from_row(row: &mysql_async::Row) -> Self {
+        let system: String = row.get(1).unwrap();
+        let json: String = row.get(5).unwrap();
+        Self {
+            id: row.get(0),
+            system: ExternalSystem::from_str(&system),
+            name: row.get(2).unwrap(),
+            external_id: row.get(3).unwrap(),
+            email: row.get(4).unwrap(),
+            bespoke_data: serde_json::from_str(&json).unwrap_or(Value::Null),
+        }
+    }
+
+    pub fn external_url(&self) -> String {
+        self.system.as_url(&self.external_id)
     }
 
     pub async fn set_cookie(&self, state: Arc<AppState>) -> Result<String,RingError> {
@@ -61,7 +92,7 @@ impl ExternalSystemUser {
         session.insert("user", &self)?;
 
         // Store session and get corresponding cookie
-        let cookie = state.store.store_session(session)
+        let cookie = state.dal.read().await.session_store.store_session(session)
             .await
             .map_err(|e|e.to_string())?
             .ok_or_else(||format!("Session store error"))?;
@@ -73,7 +104,7 @@ impl ExternalSystemUser {
 
     pub async fn from_cookies(app: &Arc<AppState>, cookies: &Option<TypedHeader<headers::Cookie>>) -> Option<Self> {
         let cookie = cookies.to_owned()?.get(COOKIE_NAME)?.to_string();
-        let session = app.store.load_session(cookie).await.ok()??;
+        let session = app.dal.read().await.session_store.load_session(cookie).await.ok()??;
         let j = json!(session).get("data").cloned()?.get("user")?.to_owned();
         let user: Value = serde_json::from_str(j.as_str()?).ok()?;
         let s = serde_json::to_string(&user).ok()?;
@@ -81,34 +112,32 @@ impl ExternalSystemUser {
         Some(ret)
     }
 
-    pub fn get_entities_with_access(&self, app: &Arc<AppState>) -> EntityGroup {
-        let user_id = match self.id {
-            Some(id) => id as usize,
-            None => return EntityGroup::from_vec(vec![]),
-        };
-        let res: Vec<(usize,String)> = app.db_access
-            .iter()
-            .filter(|(_id,a)|a.user_id==user_id)
-            .map(|(_id,a)|(a.entity_id,a.right.to_owned()))
-            .collect();
+    pub async fn get_entities_with_access(&self, app: &Arc<AppState>) -> Result<EntityGroup,RingError> {
+        match self.id {
+            Some(user_id) => app.dal.read().await.get_entities_with_user_access(user_id as usize,None).await,
+            None => Ok(EntityGroup::empty()),
+        }
         
-        let mut entity_ids: Vec<usize> = res
-            .iter()
-            .map(|(id,_right)|*id)
-            .collect();
-        entity_ids.sort();
-        entity_ids.dedup();
-
-        let mut entities = app.load_entities(&entity_ids);
-        res
-            .iter()
-            .for_each(|(id,right)|{
-                if let Some(entity) = entities.get_mut(*id) {
-                    entity.rights.push(right.to_owned())
-                }
-            });
-        app.annotate_entities(&mut entities);
-        entities
     }
 
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExternalAccessRequest {
+    pub id: usize,
+    pub user_id: usize,
+    pub entity_id: usize,
+    pub note: String,
+}
+
+impl ExternalAccessRequest {
+    pub fn from_row(row: &mysql_async::Row) -> Self {
+        Self {
+            id: row.get(0).unwrap(),
+            user_id: row.get(1).unwrap(),
+            entity_id: row.get(2).unwrap(),
+            note: row.get(3).unwrap(),
+        }
+    }
 }

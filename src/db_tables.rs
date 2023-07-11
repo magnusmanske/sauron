@@ -40,6 +40,7 @@ impl DbTableConnection {
 pub struct DbTableEntity {
     pub id: usize,
     pub name: String,
+    pub external_id: String,
 }
 
 impl DbTableEntity {
@@ -47,6 +48,7 @@ impl DbTableEntity {
         Self {
             id: row.get(0).unwrap(),
             name: row.get(1).unwrap(),
+            external_id: row.get(2).unwrap(),
         }
     }
 }

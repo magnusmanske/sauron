@@ -14,6 +14,7 @@
             </div>
             <div v-if='error!=""' class="alert alert-danger" role="alert">{{error}}</div>
             <div v-if="loaded">
+                <h2>Entities you have access to</h2>
                 <table class="table">
                     <caption style="display:none;">Entity lists (parents, current, children)</caption>
                     <tr>
@@ -46,6 +47,7 @@
             <h2>Log in</h2>
             <ul>
                 <li><a href="/redirect_to/orcid">ORCID</a></li>
+                <li><a href="/redirect_to/google">Google</a></li>
             </ul>
         </div>
 	</div>
